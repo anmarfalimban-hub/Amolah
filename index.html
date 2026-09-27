@@ -98,6 +98,8 @@ h2 small{font-size:16px;color:var(--soft);font-weight:500;margin-left:8px}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chip{font-size:13px;font-weight:600;background:var(--bg);border-radius:99px;padding:2px 10px;color:var(--soft)}
 .chip.late{background:var(--danger);color:#fff}
+.chip.type{background:color-mix(in srgb,var(--c) 18%,var(--bg));color:var(--ink)}
+.chip.exam{background:var(--grape);color:#fff}
 .chip.today{background:var(--sun);color:#3a2600}
 .check{width:52px;height:52px;border-radius:50%;border:4px solid var(--c);display:grid;place-items:center;font-size:26px;color:transparent;transition:transform .1s}
 .check:active{transform:scale(.9)}
@@ -257,6 +259,17 @@ textarea{min-height:96px;resize:vertical;unicode-bidi:plaintext}
 <script>
 /* ---------- Data ---------- */
 const UNI=`<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><g id="mane" stroke="#2E1A47" stroke-width="4"> <circle cx="84" cy="62" r="17" fill="#FF5FA8"/> <circle cx="64" cy="78" r="18" fill="#A66CFF"/> <circle cx="52" cy="102" r="18" fill="#1FBF9F"/> <circle cx="48" cy="128" r="17" fill="#FFC23C"/> <circle cx="50" cy="154" r="17" fill="#FF5FA8"/> <circle cx="56" cy="180" r="16" fill="#A66CFF"/> <circle cx="98" cy="58" r="12" fill="#A66CFF"/> </g> <g fill="#2E1A47" stroke="#2E1A47" stroke-width="9" stroke-linejoin="round"> <path d="M66 150 Q60 182 70 204 L140 204 Q128 176 124 150 Z"/> <ellipse cx="96" cy="112" rx="50" ry="48"/> <ellipse cx="130" cy="136" rx="34" ry="27"/> <path d="M76 74 L82 40 L100 68 Z"/> </g> <g fill="#FFFFFF"> <path d="M66 150 Q60 182 70 204 L140 204 Q128 176 124 150 Z"/> <ellipse cx="96" cy="112" rx="50" ry="48"/> <ellipse cx="130" cy="136" rx="34" ry="27"/> <path d="M76 74 L82 40 L100 68 Z"/> </g> <path d="M82 66 L84 50 L93 64 Z" fill="#FFB3D6"/> <g stroke="#2E1A47" stroke-width="4.5" stroke-linejoin="round"> <path d="M104 70 L136 10 L122 76 Z" fill="#FFC23C"/> </g> <g stroke="#E09A00" stroke-width="3" stroke-linecap="round"> <path d="M109 62 L124 58"/><path d="M113 48 L128 44"/><path d="M118 34 L131 31"/> </g> <g id="front-mane"> <circle cx="92" cy="72" r="13" fill="#FF5FA8" stroke="#2E1A47" stroke-width="4"/> <circle cx="76" cy="84" r="12" fill="#1FBF9F" stroke="#2E1A47" stroke-width="4"/> </g> <path d="M100 104 Q111 116 122 104" fill="none" stroke="#2E1A47" stroke-width="5" stroke-linecap="round"/> <path d="M101 104 L95 99 M106 109 L102 114 M112 110 L111 117" stroke="#2E1A47" stroke-width="3.5" stroke-linecap="round"/> <ellipse cx="116" cy="126" rx="11" ry="7" fill="#FF8FC4" opacity=".75"/> <circle cx="150" cy="130" r="3.5" fill="#2E1A47"/> <path d="M128 150 Q140 160 152 150" fill="none" stroke="#2E1A47" stroke-width="4" stroke-linecap="round"/></svg>`;
+const TYPES=[
+ {id:'homework',name:'Homework',emoji:'📝',say:'do your',word:'homework'},
+ {id:'project',name:'Project',emoji:'🧩',say:'work on your',word:'project'},
+ {id:'task',name:'Task',emoji:'✅',say:'do your',word:'task'},
+ {id:'quiz',name:'Quiz',emoji:'❓',say:'study for your',word:'quiz',exam:true},
+ {id:'test',name:'Test',emoji:'📋',say:'study for your',word:'test',exam:true},
+ {id:'reading',name:'Reading',emoji:'📖',say:'do your',word:'reading'},
+ {id:'worksheet',name:'Worksheet',emoji:'📄',say:'do your',word:'worksheet'},
+ {id:'presentation',name:'Presentation',emoji:'🎤',say:'prepare your',word:'presentation'}
+];
+const typ=id=>TYPES.find(t=>t.id===id)||TYPES[0];
 const DAYS=[{i:0,s:'Sun',n:'Sunday'},{i:1,s:'Mon',n:'Monday'},{i:2,s:'Tue',n:'Tuesday'},{i:3,s:'Wed',n:'Wednesday'},{i:4,s:'Thu',n:'Thursday'}];
 const PALETTE=['#FF5FA8','#7B5CFF','#1FBF9F','#FF9F1C','#2D9CDB','#E84393','#00B894','#A66CFF','#F76E11','#0FB5C9','#D35400','#6C5CE7'];
 const EMOJIS=['🔢','🔬','🔤','✍️','📖','🕌','🌍','🎨','⚽','💻','🧩','🎵','🧪','📐','🌱','🦋','🏠','📝','🌙','🧠'];
@@ -267,8 +280,8 @@ const DEFAULT_SUBJECTS=[
 ].map((s,k)=>({id:s[0],name:s[1],emoji:s[2],color:PALETTE[k%PALETTE.length]}));
 
 function freshState(){
-  const schedule={};DAYS.forEach(d=>schedule[d.i]=Array(7).fill(null));
-  return {v:1,rev:0,name:'Amolah',pet:'Luna',rewards:[],pin:null,periods:7,sound:'chime',voice:true,subjects:DEFAULT_SUBJECTS,schedule,hw:[],stars:0};
+  const schedule={};DAYS.forEach(d=>schedule[d.i]=Array(9).fill(null));
+  return {v:1,rev:0,name:'Amolah',pet:'Luna',rewards:[],pin:null,periods:9,m9:true,sound:'chime',voice:true,subjects:DEFAULT_SUBJECTS,schedule,hw:[],stars:0};
 }
 let state=freshState();
 let dbRef=null,saveTimer=null,view='today',alerting=null,audioCtx=null,wakeLock=null;
@@ -296,7 +309,11 @@ function level(n){
 }
 
 /* ---------- Storage ---------- */
-function loadLocal(){try{const r=localStorage.getItem('amolah-hw');if(r)state=Object.assign(freshState(),JSON.parse(r))}catch(e){}}
+function migrate(raw){
+  if(raw&&!raw.m9){if(state.periods<9)state.periods=9;state.m9=true}
+  DAYS.forEach(d=>{state.schedule[d.i]=state.schedule[d.i]||[];while(state.schedule[d.i].length<state.periods)state.schedule[d.i].push(null)});
+}
+function loadLocal(){try{const r=localStorage.getItem('amolah-hw');if(r){const d=JSON.parse(r);state=Object.assign(freshState(),d);migrate(d)}}catch(e){}migrate()}
 function save(){
   state.rev=(state.rev||0)+1;
   try{localStorage.setItem('amolah-hw',JSON.stringify(state))}catch(e){}
@@ -315,12 +332,12 @@ async function connectDb(){
     const snap=await dbRef.get();
     if(snap.exists){
       const d=snap.data();
-      if(d&&(d.rev||0)>=(state.rev||0)){state=Object.assign(freshState(),d);try{localStorage.setItem('amolah-hw',JSON.stringify(state))}catch(e){}render()}
+      if(d&&(d.rev||0)>=(state.rev||0)){state=Object.assign(freshState(),d);migrate(d);try{localStorage.setItem('amolah-hw',JSON.stringify(state))}catch(e){}render()}
       else dbRef.set(JSON.parse(JSON.stringify(state))).catch(()=>{});
     }else dbRef.set(JSON.parse(JSON.stringify(state))).catch(()=>{});
     dbRef.onSnapshot(s=>{
       if(!s.exists||s.metadata.hasPendingWrites)return;
-      const d=s.data();if(d&&(d.rev||0)>(state.rev||0)){state=Object.assign(freshState(),d);render()}
+      const d=s.data();if(d&&(d.rev||0)>(state.rev||0)){state=Object.assign(freshState(),d);migrate(d);render()}
     },()=>{});
   }catch(e){}
 }
@@ -407,6 +424,7 @@ function hwCard(h){
     <div class="emo">${s.emoji}</div>
     <div>
       <div class="sub" dir="auto">${esc(s.name)}</div>
+      <div class="chips" style="margin:3px 0 1px"><span class="chip type ${typ(h.type).exam?'exam':''}">${typ(h.type).emoji} ${typ(h.type).name}</span></div>
       <div class="txt" dir="auto">${esc(h.text)}</div>
       <div class="chips">
         ${h.done?`<span class="chip">Done ${relDay(key(h.doneAt))}</span>`
@@ -589,6 +607,7 @@ function hwSheet(opts={}){
   let day=edit?edit.day:(opts.day??(nowDay<=4?nowDay:0));
   let period=edit?edit.period:(opts.period??null);
   let sid=edit?edit.subjectId:(period!=null?state.schedule[day][period]:null);
+  let type=edit?(edit.type||'homework'):'homework';
   const dues=dueOptions();
   let due=edit?edit.due:dues[1].k;
   let remDay=edit?key(edit.remindAt):defaultRemDay(due);
@@ -596,6 +615,7 @@ function hwSheet(opts={}){
   let time=edit?new Date(edit.remindAt).toTimeString().slice(0,5):'16:00';
 
   openSheet(`<h3>${edit?'Edit homework ✏️':'New homework 📝'}</h3>
+    <div class="lbl">What kind is it?</div><div class="opts" id="typO">${TYPES.map(t=>`<button class="opt" data-t="${t.id}" aria-pressed="${t.id===type}">${t.emoji} ${t.name}</button>`).join('')}</div>
     <div class="lbl">Which day did you get it?</div><div class="opts" id="dayO">${DAYS.map(d=>`<button class="opt" data-d="${d.i}" aria-pressed="${d.i===day}">${d.s}</button>`).join('')}</div>
     <div class="lbl">Which class?</div><div class="opts" id="perO"></div>
     <div class="lbl">Subject</div><div class="opts" id="subO"></div>
@@ -631,6 +651,7 @@ function hwSheet(opts={}){
     sub.onclick=e=>{const b=e.target.closest('[data-s]');if(!b)return;sid=b.dataset.s;press(sub,b)};
     dueO.onclick=e=>{const b=e.target.closest('[data-k]');if(!b)return;due=b.dataset.k;remDay=defaultRemDay(due);drawDue();drawRem()};
     el.querySelector('#tm').oninput=remTxt;
+    el.querySelector('#typO').onclick=e=>{const b=e.target.closest('[data-t]');if(!b)return;type=b.dataset.t;press(el.querySelector('#typO'),b)};
     el.querySelector('#cancel').onclick=close;
     if(edit)el.querySelector('#del').onclick=()=>{state.hw=state.hw.filter(h=>h.id!==edit.id);save();close();render();toast('Homework deleted')};
     el.querySelector('#ok').onclick=()=>{
@@ -638,7 +659,7 @@ function hwSheet(opts={}){
       if(!sid){toast('Pick a subject first 🙂');return}
       if(!text){toast('Write what the homework is 🙂');el.querySelector('#txt').focus();return}
       const s=subj(sid),remindAt=remindTs(remDay,el.querySelector('#tm').value||'16:00');
-      const rec={subjectId:sid,subjectName:s.name,emoji:s.emoji,color:s.color,text,day,period,due,remindAt,nextAlert:remindAt};
+      const rec={type,subjectId:sid,subjectName:s.name,emoji:s.emoji,color:s.color,text,day,period,due,remindAt,nextAlert:remindAt};
       if(edit)Object.assign(edit,rec);else state.hw.push({id:uid(),done:false,created:Date.now(),...rec});
       save();close();render();yay();toast(edit?'Saved ✅':`Added! I’ll remind you ${relDay(key(remindAt)).toLowerCase()} at ${fmtTime(remindAt)} ⏰`);
     };
@@ -674,7 +695,7 @@ function settingsSheet(){
   openSheet(`<h3>Settings ⚙️</h3>
     <div class="lbl">Name</div><input class="field" id="nm" dir="auto" value="${esc(state.name)}">
     <div class="lbl">Unicorn’s name 🦄</div><input class="field" id="pn" dir="auto" value="${esc(state.pet||'Luna')}">
-    <div class="lbl">Classes per day</div><div class="opts" id="pO">${[5,6,7,8].map(n=>`<button class="opt" data-n="${n}" aria-pressed="${n===state.periods}">${n}</button>`).join('')}</div>
+    <div class="lbl">Classes per day</div><div class="opts" id="pO">${[5,6,7,8,9].map(n=>`<button class="opt" data-n="${n}" aria-pressed="${n===state.periods}">${n}</button>`).join('')}</div>
     <div class="lbl">Reminder sound</div><div class="opts" id="sO">${Object.entries(TUNES).map(([k,t])=>`<button class="opt" data-t="${k}" aria-pressed="${k===state.sound}">${t.name}</button>`).join('')}</div>
     <div class="lbl">Talking reminder</div><div class="opts" id="vO"><button class="opt" data-v="1" aria-pressed="${state.voice}">🗣️ On</button><button class="opt" data-v="0" aria-pressed="${!state.voice}">🔇 Off</button></div>
     <div class="btns"><button class="btn pink" id="test">Test the alarm 🔔</button><button class="btn main" id="ok">Done</button></div>
@@ -723,8 +744,8 @@ function showAlarm(h){
   const s=subj(h.subjectId)||{name:h.subjectName,emoji:h.emoji};
   const a=document.createElement('div');a.className='alarm';a.setAttribute('role','alertdialog');
   a.innerHTML=`<div class="box"><span class="bigUni">${UNI}</span>
-    <h3>${esc(state.name)}! It’s homework time! ⏰</h3>
-    <p><b dir="auto">${s.emoji} ${esc(s.name)}</b></p>
+    <h3>${esc(state.name)}! It’s ${typ(h.type).exam?'study':'homework'} time! ⏰</h3>
+    <p><b dir="auto">${s.emoji} ${esc(s.name)} ${typ(h.type).name}</b></p>
     <p dir="auto">${esc(h.text)}</p>
     <p style="color:var(--soft);font-size:17px">Needed ${relDay(h.due).toLowerCase()}</p>
     <div class="btns">
@@ -734,7 +755,7 @@ function showAlarm(h){
     </div></div>`;
   document.body.appendChild(a);
   playTune(state.sound,3);
-  setTimeout(()=>speak(`${state.name}! It's time to do your ${s.name} homework!`),1800);
+  setTimeout(()=>speak(`${state.name}! It's time to ${typ(h.type).say} ${s.name} ${typ(h.type).word}!`),1800);
   const close=()=>{a.remove();alerting=null;speechSynthesis&&speechSynthesis.cancel()};
   a.querySelector('#aDone').onclick=()=>{close();toggleDone(h.id)};
   a.querySelector('#aStart').onclick=()=>{h.nextAlert=Date.now()+30*6e4;save();close();render();toast('You got this! I’ll check again in 30 minutes 💪')};
