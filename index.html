@@ -789,26 +789,35 @@ function hwSheet(opts={}){
       return `<button class="opt" data-p="${p}" aria-pressed="${p===period}">${s?s.emoji:'•'} ${p+1}<small dir="auto">${s?esc(s.name):'no class'}</small></button>`}).join('')};
     const drawSub=()=>{sub.innerHTML=state.subjects.map(s=>`<button class="subjbtn" style="--c:${s.color}" data-s="${s.id}" aria-pressed="${s.id===sid}">${s.emoji} <span dir="auto">${esc(s.name)}</span></button>`).join('')};
     const dueO=el.querySelector('#dueO'),remO=el.querySelector('#remO');
+    // Built once: re-creating the date field while the iPad calendar is open closes the calendar.
+    dueO.innerHTML=dues.map(o=>`<button class="opt" data-k="${o.k}">${o.t}<small>${fmtDate(o.k)}</small></button>`).join('')+
+      `<label class="opt" id="ddWrap" style="display:flex;align-items:center;gap:8px;cursor:pointer">📅 <span><span id="ddTxt">Pick a date</span><small>other day</small></span>
+        <input type="date" id="dd" min="${todayK()}" style="border:2px solid var(--line);border-radius:12px;padding:6px 8px;background:var(--card);font-size:17px;font-weight:700;color:var(--ink);min-width:150px"></label>`;
+    const dd=dueO.querySelector('#dd'),ddWrap=dueO.querySelector('#ddWrap'),ddTxt=dueO.querySelector('#ddTxt');
     const drawDue=()=>{
       const inList=dues.some(o=>o.k===due);
-      dueO.innerHTML=dues.map(o=>`<button class="opt" data-k="${o.k}" aria-pressed="${o.k===due}">${o.t}<small>${fmtDate(o.k)}</small></button>`).join('')+
-        `<label class="opt" aria-pressed="${!inList}" style="display:flex;align-items:center;gap:6px">📅 <input type="date" id="dd" min="${todayK()}" value="${inList?'':due}" style="border:0;background:transparent;font-weight:700;color:inherit"></label>`;
-      dueO.querySelector('#dd').onchange=e=>{if(e.target.value){due=e.target.value;if(remDay>due)remDay=defaultRemDay(due);drawDue();drawRem()}};
+      dueO.querySelectorAll('[data-k]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.k===due)));
+      ddWrap.setAttribute('aria-pressed',String(!inList));
+      ddTxt.textContent=inList?'Pick a date':fmtDate(due);
+      if(!inList&&dd.value!==due)dd.value=due;
     };
+    const onDate=()=>{if(!dd.value||dd.value<todayK()||dd.value===due)return;due=dd.value;remDay=defaultRemDay(due);drawDue();drawRem()};
+    dd.addEventListener('change',onDate);dd.addEventListener('blur',onDate);
     const drawRem=()=>{
-      const days=[];for(let d=fromKey(todayK());key(d)<=due;d=addDays(d,1))days.push(key(d));
+      let days=[];for(let d=fromKey(todayK());key(d)<=due;d=addDays(d,1))days.push(key(d));
+      if(days.length>8)days=[days[0],days[1],...days.slice(-6)];
       if(!days.includes(remDay))remDay=defaultRemDay(due);
       remO.innerHTML=days.map(k=>`<button class="opt" data-r="${k}" aria-pressed="${k===remDay}">${relDay(k)}<small>${fromKey(k).toLocaleDateString('en-US',{weekday:'long'})}</small></button>`).join('');
       remTxt();
     };
-    const remTxt=()=>{const r=remindTs(remDay,el.querySelector('#tm').value||'16:00');el.querySelector('#remTxt').textContent=`🦄 I’ll remind you ${relDay(key(r)).toLowerCase()} at ${fmtTime(r)}`+(r-Date.now()<3*6e4&&remDay===todayK()?' (that time already passed, so in 2 minutes)':'')};
+    const remTxt=()=>{const r=remindTs(remDay,el.querySelector('#tm').value||'16:00');el.querySelector('#remTxt').textContent=`🦄 I’ll remind you ${(d=>['Today','Tomorrow'].includes(d)?d.toLowerCase():'on '+d)(relDay(key(r)))} at ${fmtTime(r)}`+(r-Date.now()<3*6e4&&remDay===todayK()?' (that time already passed, so in 2 minutes)':'')};
     el.querySelector('#manage').onclick=()=>subjectsSheet(()=>{if(sid&&!subj(sid))sid=null;drawPer();drawSub()});
     drawPer();drawSub();drawDue();drawRem();
     remO.onclick=e=>{const b=e.target.closest('[data-r]');if(!b)return;remDay=b.dataset.r;press(remO,b);remTxt()};
     el.querySelector('#dayO').onclick=e=>{const b=e.target.closest('[data-d]');if(!b)return;day=+b.dataset.d;press(el.querySelector('#dayO'),b);period=null;drawPer()};
     per.onclick=e=>{const b=e.target.closest('[data-p]');if(!b)return;period=+b.dataset.p;press(per,b);const s=state.schedule[day][period];if(s){sid=s;drawSub()}};
     sub.onclick=e=>{const b=e.target.closest('[data-s]');if(!b)return;if(type==='other'&&sid===b.dataset.s){sid=null;b.setAttribute('aria-pressed','false');return}sid=b.dataset.s;press(sub,b)};
-    dueO.onclick=e=>{const b=e.target.closest('[data-k]');if(!b)return;due=b.dataset.k;remDay=defaultRemDay(due);drawDue();drawRem()};
+    dueO.onclick=e=>{const b=e.target.closest('[data-k]');if(!b)return;due=b.dataset.k;dd.value='';remDay=defaultRemDay(due);drawDue();drawRem()};
     const timO=el.querySelector('#timO'),tm=el.querySelector('#tm'),tmWrap=el.querySelector('#tmWrap');
     timO.onclick=e=>{const b=e.target.closest('[data-tm]');if(!b)return;time=b.dataset.tm;tm.value=time;press(timO,b);tmWrap.setAttribute('aria-pressed','false');remTxt()};
     tm.oninput=()=>{if(!tm.value)return;time=tm.value;timO.querySelectorAll('[data-tm]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tm===time)));tmWrap.setAttribute('aria-pressed',String(!TIMES.includes(time)));remTxt()};
