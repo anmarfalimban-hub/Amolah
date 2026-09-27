@@ -205,6 +205,13 @@ textarea{min-height:96px;resize:vertical;unicode-bidi:plaintext}
 @media (max-width:640px){.top{grid-template-columns:auto 1fr}.top>div:last-child{grid-column:1/-1}.uni{width:84px;height:84px}}
 .codebox{font-size:40px;font-weight:800;letter-spacing:3px;text-align:center;background:var(--bg);border:3px dashed var(--grape);border-radius:24px;padding:14px;margin:10px 0;direction:ltr;user-select:all}
 .syncok{color:var(--mint);font-weight:800}
+.subrow{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:2px solid var(--line)}
+.subrow .e{font-size:28px;width:46px;height:46px;border-radius:14px;display:grid;place-items:center;background:color-mix(in srgb,var(--c) 22%,transparent)}
+.subrow .x{flex:1;font-weight:700;font-size:18px;unicode-bidi:plaintext}
+.subrow .x small{display:block;color:var(--soft);font-weight:600;font-size:13px}
+.mini{padding:6px 12px;border-radius:14px;border:2px solid var(--line);background:var(--card);font-weight:700;font-size:15px}
+.mini.red{color:var(--danger);border-color:var(--danger)}
+.linkbtn{margin-top:10px;font-weight:700;color:var(--grape);font-size:16px;padding:4px 0}
 #confetti{position:fixed;inset:0;pointer-events:none;z-index:70}
 
 @keyframes fade{from{opacity:0}}
@@ -745,6 +752,7 @@ function hwSheet(opts={}){
   let day=edit?edit.day:(opts.day??(nowDay<=4?nowDay:0));
   let period=edit?edit.period:(opts.period??null);
   let sid=edit?edit.subjectId:(period!=null?state.schedule[day][period]:null);
+  if(sid&&!subj(sid))sid=null;
   let type=edit?(edit.type||'homework'):'homework';
   const otherInit=edit?(edit.otherName||''):'';
   const dues=dueOptions();
@@ -762,6 +770,7 @@ function hwSheet(opts={}){
     <div class="lbl">Which day did you get it?</div><div class="opts" id="dayO">${DAYS.map(d=>`<button class="opt" data-d="${d.i}" aria-pressed="${d.i===day}">${d.s}</button>`).join('')}</div>
     <div class="lbl">Which class?</div><div class="opts" id="perO"></div>
     <div class="lbl" id="subLbl">${type==='other'?'Subject (optional)':'Subject'}</div><div class="opts" id="subO"></div>
+    <button class="linkbtn" id="manage">✏️ Edit or delete subjects</button>
     <div class="lbl" id="txtLbl">${type==='other'?'More details (optional)':'What’s the homework? (English or عربي)'}</div>
     <textarea id="txt" dir="auto" placeholder="Page 24, questions 1 to 5">${esc(edit?edit.text:'')}</textarea>
     <div class="lbl">When do you need it?</div><div class="opts" id="dueO"></div>
@@ -793,6 +802,7 @@ function hwSheet(opts={}){
       remTxt();
     };
     const remTxt=()=>{const r=remindTs(remDay,el.querySelector('#tm').value||'16:00');el.querySelector('#remTxt').textContent=`🦄 I’ll remind you ${relDay(key(r)).toLowerCase()} at ${fmtTime(r)}`+(r-Date.now()<3*6e4&&remDay===todayK()?' (that time already passed, so in 2 minutes)':'')};
+    el.querySelector('#manage').onclick=()=>subjectsSheet(()=>{if(sid&&!subj(sid))sid=null;drawPer();drawSub()});
     drawPer();drawSub();drawDue();drawRem();
     remO.onclick=e=>{const b=e.target.closest('[data-r]');if(!b)return;remDay=b.dataset.r;press(remO,b);remTxt()};
     el.querySelector('#dayO').onclick=e=>{const b=e.target.closest('[data-d]');if(!b)return;day=+b.dataset.d;press(el.querySelector('#dayO'),b);period=null;drawPer()};
@@ -823,12 +833,70 @@ function hwSheet(opts={}){
   });
 }
 
+const normName=n=>String(n||'').trim().replace(/\s+/g,' ').toLowerCase();
+const findSubjectByName=(n,exceptId)=>state.subjects.find(x=>x.id!==exceptId&&normName(x.name)===normName(n));
+function subjectUse(id){
+  let cls=0;DAYS.forEach(d=>(state.schedule[d.i]||[]).forEach(x=>{if(x===id)cls++}));
+  const hw=state.hw.filter(h=>h.subjectId===id&&!h.done).length;return {cls,hw};
+}
+function subjectsSheet(onDone){
+  const draw=()=>state.subjects.map(x=>{const u=subjectUse(x.id);
+    return `<div class="subrow" style="--c:${x.color}" data-row="${x.id}"><span class="e">${x.emoji}</span>
+      <span class="x" dir="auto">${esc(x.name)}<small>${u.cls?`${u.cls} ${u.cls>1?'classes':'class'} in schedule`:'not in schedule'}${u.hw?` · ${u.hw} homework`:''}</small></span>
+      <button class="mini" data-sedit="${x.id}">✏️ Edit</button><button class="mini red" data-sdel="${x.id}">🗑️ Delete</button></div>`}).join('');
+  openSheet(`<h3>My subjects 📚</h3>
+    <p class="note" style="font-size:16px">Rename a subject, change its picture, or delete one you added by mistake.</p>
+    <div id="sl">${draw()}</div>
+    <div class="lbl">Add a new subject (English or عربي)</div>
+    <input class="field" id="nn" dir="auto" placeholder="Subject name">
+    <div class="emojis" id="emO" style="margin-top:10px">${EMOJIS.map((e,i)=>`<button data-e="${e}" aria-pressed="${i===17}">${e}</button>`).join('')}</div>
+    <div class="btns"><button class="btn" id="cancel">Done</button><button class="btn main" id="mk">Add subject</button></div>`,
+  (el,close)=>{
+    let em='📝';const sl=el.querySelector('#sl');
+    const finish=()=>{close();render();onDone&&onDone()};
+    el.querySelector('#cancel').onclick=finish;
+    el.parentElement.addEventListener('click',e=>{if(e.target===el.parentElement)onDone&&onDone()});
+    el.querySelector('#emO').onclick=e=>{const b=e.target.closest('[data-e]');if(!b)return;em=b.dataset.e;press(el.querySelector('#emO'),b)};
+    el.querySelector('#mk').onclick=()=>{
+      const n=el.querySelector('#nn').value.trim();if(!n){toast('Type the subject name first');return}
+      if(findSubjectByName(n)){toast(`“${n}” is already in your subjects`);return}
+      state.subjects.push({id:uid(),name:n,emoji:em,color:PALETTE[state.subjects.length%PALETTE.length]});
+      save();el.querySelector('#nn').value='';sl.innerHTML=draw();toast('Subject added ✅');
+    };
+    sl.onclick=e=>{
+      const ed=e.target.closest('[data-sedit]'),dl=e.target.closest('[data-sdel]'),sv=e.target.closest('[data-ssave]');
+      if(ed){const x=subj(ed.dataset.sedit);const row=el.querySelector(`[data-row="${x.id}"]`);
+        row.outerHTML=`<div class="subrow" style="--c:${x.color};flex-wrap:wrap" data-row="${x.id}">
+          <input class="field" id="en" dir="auto" value="${esc(x.name)}" style="flex:1;min-width:180px;font-size:18px;padding:8px 14px">
+          <button class="mini" data-ssave="${x.id}" style="background:var(--grape);color:#fff;border-color:var(--grape)">Save</button>
+          <div class="emojis" id="ee" style="width:100%">${EMOJIS.map(e=>`<button data-e="${e}" aria-pressed="${e===x.emoji}">${e}</button>`).join('')}</div></div>`;
+        const ee=el.querySelector('#ee');ee.onclick=ev=>{const b=ev.target.closest('[data-e]');if(!b)return;press(ee,b)};
+        el.querySelector('#en').focus();return}
+      if(sv){const x=subj(sv.dataset.ssave);const n=el.querySelector('#en').value.trim();
+        if(!n){toast('Type the subject name');return}
+        if(findSubjectByName(n,x.id)){toast(`“${n}” is already in your subjects`);return}
+        const pe=el.querySelector('#ee [aria-pressed="true"]');
+        x.name=n;if(pe)x.emoji=pe.dataset.e;
+        state.hw.forEach(h=>{if(h.subjectId===x.id){h.subjectName=x.name;h.emoji=x.emoji}});
+        save();sl.innerHTML=draw();toast('Saved ✅');return}
+      if(dl){const x=subj(dl.dataset.sdel);const u=subjectUse(x.id);
+        const msg=`Delete “${x.name}”?`+(u.cls?`\nIt will be removed from ${u.cls} ${u.cls>1?'classes':'class'} in your schedule.`:'')+(u.hw?`\nYour ${u.hw} homework will stay, with the old name.`:'');
+        const twin=findSubjectByName(x.name,x.id);
+        if(!twin&&!confirm(msg))return;
+        state.subjects=state.subjects.filter(y=>y.id!==x.id);
+        DAYS.forEach(d=>{state.schedule[d.i]=(state.schedule[d.i]||[]).map(y=>y===x.id?(twin?twin.id:null):y)});
+        if(twin)state.hw.forEach(h=>{if(h.subjectId===x.id){h.subjectId=twin.id;h.subjectName=twin.name;h.emoji=twin.emoji;h.color=twin.color}});
+        save();sl.innerHTML=draw();toast(twin?`Duplicate removed. Its classes now use the other “${twin.name}” ✅`:'Subject deleted');}
+    };
+  });
+}
 function cellSheet(d,p){
   const cur=state.schedule[d][p];const s=subj(cur);
   openSheet(`<h3>${DAYS[d].n}, period ${p+1}</h3>
     ${s?`<button class="addbig" id="addHere" style="background:${s.color};box-shadow:none"><span class="plus" style="color:${s.color}">+</span>Add ${esc(s.name)} homework</button>`:''}
     <div class="lbl">${s?'Change the class':'Choose the class'}</div>
     <div class="opts" id="subO">${state.subjects.map(x=>`<button class="subjbtn" style="--c:${x.color}" data-s="${x.id}" aria-pressed="${x.id===cur}">${x.emoji} <span dir="auto">${esc(x.name)}</span></button>`).join('')}</div>
+    <button class="linkbtn" id="manage">✏️ Edit or delete subjects</button>
     <div class="lbl">Or make a new subject</div>
     <div class="row"><input class="field" id="nn" dir="auto" placeholder="Subject name (English or عربي)" style="flex:1;min-width:200px"></div>
     <div class="emojis" id="emO" style="margin-top:10px">${EMOJIS.map((e,i)=>`<button data-e="${e}" aria-pressed="${i===17}">${e}</button>`).join('')}</div>
@@ -837,11 +905,13 @@ function cellSheet(d,p){
     let em='📝';
     el.querySelector('#subO').onclick=e=>{const b=e.target.closest('[data-s]');if(!b)return;state.schedule[d][p]=b.dataset.s;save();close();render();yay()};
     el.querySelector('#emO').onclick=e=>{const b=e.target.closest('[data-e]');if(!b)return;em=b.dataset.e;press(el.querySelector('#emO'),b)};
+    el.querySelector('#manage').onclick=()=>{close();subjectsSheet(()=>cellSheet(d,p))};
     el.querySelector('#cancel').onclick=close;
     if(cur)el.querySelector('#clr').onclick=()=>{state.schedule[d][p]=null;save();close();render()};
     if(s)el.querySelector('#addHere').onclick=()=>{close();hwSheet({day:d,period:p})};
     el.querySelector('#mk').onclick=()=>{
       const n=el.querySelector('#nn').value.trim();if(!n){toast('Type the subject name first');return}
+      const dup=findSubjectByName(n);if(dup){state.schedule[d][p]=dup.id;save();close();render();toast(`“${dup.name}” was already there, so I used it`);return}
       const ns={id:uid(),name:n,emoji:em,color:PALETTE[state.subjects.length%PALETTE.length]};
       state.subjects.push(ns);state.schedule[d][p]=ns.id;save();close();render();yay();
     };
@@ -852,6 +922,7 @@ function settingsSheet(){
   openSheet(`<h3>Settings ⚙️</h3>
     <div class="lbl">Name</div><input class="field" id="nm" dir="auto" value="${esc(state.name)}">
     <div class="lbl">Unicorn’s name 🦄</div><input class="field" id="pn" dir="auto" value="${esc(state.pet||'Luna')}">
+    <div class="lbl">Subjects</div><button class="btn" id="subs" style="width:100%">📚 My subjects: edit or delete</button>
     <div class="lbl">Classes per day</div><div class="opts" id="pO">${[5,6,7,8,9].map(n=>`<button class="opt" data-n="${n}" aria-pressed="${n===state.periods}">${n}</button>`).join('')}</div>
     <div class="lbl">Reminder sound</div><div class="opts" id="sO">${Object.entries(TUNES).map(([k,t])=>`<button class="opt" data-t="${k}" aria-pressed="${k===state.sound}">${t.name}</button>`).join('')}</div>
     <div class="lbl">Talking reminder</div><div class="opts" id="vO"><button class="opt" data-v="1" aria-pressed="${state.voice}">🗣️ On</button><button class="opt" data-v="0" aria-pressed="${!state.voice}">🔇 Off</button></div>
@@ -863,6 +934,7 @@ function settingsSheet(){
     el.querySelector('#sO').onclick=e=>{const b=e.target.closest('[data-t]');if(!b)return;state.sound=b.dataset.t;press(el.querySelector('#sO'),b);playTune(state.sound);save()};
     el.querySelector('#vO').onclick=e=>{const b=e.target.closest('[data-v]');if(!b)return;state.voice=b.dataset.v==='1';press(el.querySelector('#vO'),b);save()};
     if(cloudOK())el.querySelector('#sync').onclick=()=>{close();pinGate(syncSheet)};
+    el.querySelector('#subs').onclick=()=>{close();subjectsSheet()};
     el.querySelector('#test').onclick=()=>{playTune(state.sound,2);speak(`${state.name}! It's homework time!`)};
     el.querySelector('#ok').onclick=()=>{const n=el.querySelector('#nm').value.trim();if(n)state.name=n;const pn=el.querySelector('#pn').value.trim();if(pn)state.pet=pn;save();close();render()};
   });
