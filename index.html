@@ -107,6 +107,8 @@ h2 small{font-size:16px;color:var(--soft);font-weight:500;margin-left:8px}
 .hw.isdone .txt{text-decoration:line-through;opacity:.7}
 .editbtn{display:inline-flex;align-items:center;gap:4px;margin-top:8px;padding:4px 14px;border-radius:99px;border:2px solid var(--line);background:var(--card);font-weight:700;font-size:15px;color:var(--ink)}
 .editbtn:active{transform:scale(.95)}
+.cardbtns{display:flex;gap:8px;flex-wrap:wrap}
+.editbtn.del{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 45%,var(--line))}
 .hw .check{margin-top:10px}
 
 .empty-state{text-align:center;padding:36px 20px;background:var(--card);border:3px dashed var(--line);border-radius:28px;color:var(--soft);font-size:19px}
@@ -576,7 +578,7 @@ function hwCard(h){
           :`<span class="chip ${late?'late':isToday?'today':''}">${late?'Late! ':''}Needed ${relDay(h.due)}</span>
             <span class="chip">⏰ ${relDay(key(h.remindAt))} ${fmtTime(h.remindAt)}</span>`}
       </div>
-      <button class="editbtn" data-edit="${h.id}">✏️ Edit</button>
+      <div class="cardbtns"><button class="editbtn" data-edit="${h.id}">✏️ Edit</button><button class="editbtn del" data-del="${h.id}">🗑️ Delete</button></div>
     </div>
     <button class="check" data-done="${h.id}" aria-label="${h.done?'Mark as not done':'Mark as done'}">✓</button>
   </article>`;
@@ -969,6 +971,19 @@ function celebrate(){
     if(p.star){x.font=`${p.s*2}px sans-serif`;x.fillText('★',0,0)}else x.fillRect(-p.s/2,-p.s/4,p.s,p.s/2);x.restore()});
     if(++f<110)requestAnimationFrame(tick);else x.clearRect(0,0,c.width,c.height)})();
 }
+function confirmDelete(h){
+  const L=hwLook(h);
+  openSheet(`<div style="text-align:center"><span class="bigUni" style="width:110px;height:110px;border-radius:50%;background:linear-gradient(160deg,#B9A6FF,#FFB3D6);overflow:hidden;padding:8px 5px 0">${UNI}</span>
+    <h3 style="margin-top:10px">Delete this homework?</h3>
+    <p style="font-size:19px;margin:0 0 4px" dir="auto"><b>${L.emoji} ${esc(L.title)}</b></p>
+    ${h.text?`<p style="font-size:17px;color:var(--soft);margin:0" dir="auto">${esc(h.text)}</p>`:''}
+    ${h.done?`<p class="note">Don’t worry, you keep your star ⭐</p>`:''}</div>
+    <div class="btns"><button class="btn" id="cancel">No, keep it</button><button class="btn red" id="yes" style="background:var(--danger);color:#fff">🗑️ Yes, delete</button></div>`,
+  (el,close)=>{
+    el.querySelector('#cancel').onclick=close;
+    el.querySelector('#yes').onclick=()=>{state.hw=state.hw.filter(x=>x.id!==h.id);save();close();render();toast('Homework deleted')};
+  });
+}
 function hop(){const u=$('#uniHead');u.classList.remove('happy');void u.offsetWidth;u.classList.add('happy')}
 function toast(m){document.querySelectorAll('.toast').forEach(t=>t.remove());const t=document.createElement('div');t.className='toast';t.textContent=m;document.body.appendChild(t);setTimeout(()=>t.remove(),3200)}
 
@@ -1017,6 +1032,7 @@ document.addEventListener('click',e=>{
   if(t.id==='syncPill'){syncNow().then(()=>toast(syncErr?'⚠️ '+syncErr:'Synced ✓'));return}
   if(t.id==='uniHead'){hop();const m=CHEERS[Math.random()*CHEERS.length|0];$('#sub').textContent=m;playTune('bubbles');speak(m.replace(/[^\w\s!’']/g,''));setTimeout(header,5000);return}
   if(t.dataset.done)return toggleDone(t.dataset.done);
+  if(t.dataset.del){const h=state.hw.find(x=>x.id===t.dataset.del);if(h)confirmDelete(h);return}
   if(t.dataset.edit){const h=state.hw.find(x=>x.id===t.dataset.edit);if(h)hwSheet({edit:h});return}
   if(t.dataset.go){view=t.dataset.go;render();return}
   if(t.dataset.cls){const[d,p]=t.dataset.cls.split('-').map(Number);return hwSheet({day:d,period:p})}
