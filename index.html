@@ -105,7 +105,8 @@ h2 small{font-size:16px;color:var(--soft);font-weight:500;margin-left:8px}
 .check:active{transform:scale(.9)}
 .hw.isdone .check{background:var(--mint);border-color:var(--mint);color:#fff}
 .hw.isdone .txt{text-decoration:line-through;opacity:.7}
-.more{position:absolute;top:6px;right:8px;font-size:18px;color:var(--soft);padding:2px 8px}
+.editbtn{display:inline-flex;align-items:center;gap:4px;margin-top:8px;padding:4px 14px;border-radius:99px;border:2px solid var(--line);background:var(--card);font-weight:700;font-size:15px;color:var(--ink)}
+.editbtn:active{transform:scale(.95)}
 .hw .check{margin-top:10px}
 
 .empty-state{text-align:center;padding:36px 20px;background:var(--card);border:3px dashed var(--line);border-radius:28px;color:var(--soft);font-size:19px}
@@ -568,9 +569,9 @@ function hwCard(h){
           :`<span class="chip ${late?'late':isToday?'today':''}">${late?'Late! ':''}Needed ${relDay(h.due)}</span>
             <span class="chip">⏰ ${relDay(key(h.remindAt))} ${fmtTime(h.remindAt)}</span>`}
       </div>
+      <button class="editbtn" data-edit="${h.id}">✏️ Edit</button>
     </div>
     <button class="check" data-done="${h.id}" aria-label="${h.done?'Mark as not done':'Mark as done'}">✓</button>
-    <button class="more" data-edit="${h.id}" aria-label="Edit">•••</button>
   </article>`;
 }
 function emptyBox(big,msg){return `<div class="empty-state"><div class="big">${big}</div>${msg}</div>`}
@@ -772,7 +773,7 @@ function hwSheet(opts={}){
         <input type="time" id="tm" value="${time}" style="border:0;background:transparent;font-size:20px;font-weight:700;color:inherit"></label>
     </div>
     <p class="note" id="remTxt" style="font-size:17px;font-weight:700"></p>
-    <div class="btns">${edit?`<button class="btn red" id="del">Delete</button>`:''}<button class="btn" id="cancel">Cancel</button><button class="btn main" id="ok">${edit?'Save':'Add homework'}</button></div>`,
+    <div class="btns">${edit?`<button class="btn red" id="del">Delete</button>`:''}<button class="btn" id="cancel">Cancel</button><button class="btn main" id="ok">${edit?'Save changes ✅':'Add homework'}</button></div>`,
   (el,close)=>{
     const per=el.querySelector('#perO'),sub=el.querySelector('#subO');
     const drawPer=()=>{per.innerHTML=state.schedule[day].slice(0,state.periods).map((id,p)=>{const s=subj(id);
@@ -910,6 +911,7 @@ function showAlarm(h){
       <button class="btn green" id="aDone">I finished it! ⭐</button>
       <button class="btn main" id="aStart">I’m starting now 💪</button>
       <button class="btn" id="aSnooze">Remind me in 10 minutes</button>
+      <button class="btn" id="aEdit">✏️ Change time or details</button>
     </div></div>`;
   document.body.appendChild(a);
   playTune(state.sound,3);
@@ -919,6 +921,7 @@ function showAlarm(h){
   const close=()=>{a.remove();alerting=null;speechSynthesis&&speechSynthesis.cancel()};
   a.querySelector('#aDone').onclick=()=>{close();toggleDone(h.id)};
   a.querySelector('#aStart').onclick=()=>{h.nextAlert=Date.now()+30*6e4;save();close();render();toast('You got this! I’ll check again in 30 minutes 💪')};
+  a.querySelector('#aEdit').onclick=()=>{close();hwSheet({edit:h})};
   a.querySelector('#aSnooze').onclick=()=>{h.nextAlert=Date.now()+10*6e4;save();close();render();toast('Okay! Back in 10 minutes ⏰')};
 }
 
