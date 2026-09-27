@@ -750,7 +750,9 @@ function hwSheet(opts={}){
   let due=edit?edit.due:dues[1].k;
   let remDay=edit?key(edit.remindAt):defaultRemDay(due);
   if(remDay<todayK())remDay=todayK();
-  let time=edit?new Date(edit.remindAt).toTimeString().slice(0,5):'16:00';
+  let time=edit?new Date(edit.remindAt).toTimeString().slice(0,5):(state.lastTime||'16:00');
+  const TIMES=['13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00','21:00'];
+  const tLabel=t=>{const[h,m]=t.split(':').map(Number);return `${h%12||12}:${String(m).padStart(2,'0')} ${h<12?'AM':'PM'}`};
 
   openSheet(`<h3>${edit?'Edit homework ✏️':'New homework 📝'}</h3>
     <div class="lbl">What kind is it?</div><div class="opts" id="typO">${TYPES.map(t=>`<button class="opt" data-t="${t.id}" aria-pressed="${t.id===type}">${t.emoji} ${t.name}</button>`).join('')}</div>
@@ -762,8 +764,14 @@ function hwSheet(opts={}){
     <div class="lbl" id="txtLbl">${type==='other'?'More details (optional)':'What’s the homework? (English or عربي)'}</div>
     <textarea id="txt" dir="auto" placeholder="Page 24, questions 1 to 5">${esc(edit?edit.text:'')}</textarea>
     <div class="lbl">When do you need it?</div><div class="opts" id="dueO"></div>
-    <div class="lbl">When do you want to do it? I’ll remind you 🦄</div><div class="opts" id="remO"></div>
-    <div class="row" style="margin-top:10px"><input type="time" class="field" id="tm" value="${time}" style="max-width:190px"><span class="note" id="remTxt"></span></div>
+    <div class="lbl">📅 Which day will you do it?</div><div class="opts" id="remO"></div>
+    <div class="lbl">⏰ What time should I remind you?</div>
+    <div class="opts" id="timO">${TIMES.map(t=>`<button class="opt" data-tm="${t}" aria-pressed="${t===time}">${tLabel(t)}</button>`).join('')}</div>
+    <div class="row" style="margin-top:12px">
+      <label class="opt" id="tmWrap" aria-pressed="${!TIMES.includes(time)}" style="display:flex;align-items:center;gap:8px">🕐 Other time
+        <input type="time" id="tm" value="${time}" style="border:0;background:transparent;font-size:20px;font-weight:700;color:inherit"></label>
+    </div>
+    <p class="note" id="remTxt" style="font-size:17px;font-weight:700"></p>
     <div class="btns">${edit?`<button class="btn red" id="del">Delete</button>`:''}<button class="btn" id="cancel">Cancel</button><button class="btn main" id="ok">${edit?'Save':'Add homework'}</button></div>`,
   (el,close)=>{
     const per=el.querySelector('#perO'),sub=el.querySelector('#subO');
@@ -783,14 +791,16 @@ function hwSheet(opts={}){
       remO.innerHTML=days.map(k=>`<button class="opt" data-r="${k}" aria-pressed="${k===remDay}">${relDay(k)}<small>${fromKey(k).toLocaleDateString('en-US',{weekday:'long'})}</small></button>`).join('');
       remTxt();
     };
-    const remTxt=()=>{const r=remindTs(remDay,el.querySelector('#tm').value||'16:00');el.querySelector('#remTxt').textContent=`⏰ ${relDay(key(r))} at ${fmtTime(r)}`};
+    const remTxt=()=>{const r=remindTs(remDay,el.querySelector('#tm').value||'16:00');el.querySelector('#remTxt').textContent=`🦄 I’ll remind you ${relDay(key(r)).toLowerCase()} at ${fmtTime(r)}`+(r-Date.now()<3*6e4&&remDay===todayK()?' (that time already passed, so in 2 minutes)':'')};
     drawPer();drawSub();drawDue();drawRem();
     remO.onclick=e=>{const b=e.target.closest('[data-r]');if(!b)return;remDay=b.dataset.r;press(remO,b);remTxt()};
     el.querySelector('#dayO').onclick=e=>{const b=e.target.closest('[data-d]');if(!b)return;day=+b.dataset.d;press(el.querySelector('#dayO'),b);period=null;drawPer()};
     per.onclick=e=>{const b=e.target.closest('[data-p]');if(!b)return;period=+b.dataset.p;press(per,b);const s=state.schedule[day][period];if(s){sid=s;drawSub()}};
     sub.onclick=e=>{const b=e.target.closest('[data-s]');if(!b)return;if(type==='other'&&sid===b.dataset.s){sid=null;b.setAttribute('aria-pressed','false');return}sid=b.dataset.s;press(sub,b)};
     dueO.onclick=e=>{const b=e.target.closest('[data-k]');if(!b)return;due=b.dataset.k;remDay=defaultRemDay(due);drawDue();drawRem()};
-    el.querySelector('#tm').oninput=remTxt;
+    const timO=el.querySelector('#timO'),tm=el.querySelector('#tm'),tmWrap=el.querySelector('#tmWrap');
+    timO.onclick=e=>{const b=e.target.closest('[data-tm]');if(!b)return;time=b.dataset.tm;tm.value=time;press(timO,b);tmWrap.setAttribute('aria-pressed','false');remTxt()};
+    tm.oninput=()=>{if(!tm.value)return;time=tm.value;timO.querySelectorAll('[data-tm]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tm===time)));tmWrap.setAttribute('aria-pressed',String(!TIMES.includes(time)));remTxt()};
     el.querySelector('#typO').onclick=e=>{const b=e.target.closest('[data-t]');if(!b)return;type=b.dataset.t;press(el.querySelector('#typO'),b);
       const o=type==='other';el.querySelector('#otherBox').hidden=!o;
       el.querySelector('#subLbl').textContent=o?'Subject (optional)':'Subject';
@@ -804,7 +814,7 @@ function hwSheet(opts={}){
       if(isOther&&!oth){toast('Write what you need to do 🙂');el.querySelector('#oth').focus();return}
       if(!isOther&&!sid){toast('Pick a subject first 🙂');return}
       if(!isOther&&!text){toast('Write what the homework is 🙂');el.querySelector('#txt').focus();return}
-      const s=sid?subj(sid):null,remindAt=remindTs(remDay,el.querySelector('#tm').value||'16:00');
+      const s=sid?subj(sid):null,remindAt=remindTs(remDay,el.querySelector('#tm').value||'16:00');state.lastTime=el.querySelector('#tm').value||time;
       const rec={type,otherName:isOther?oth:'',subjectId:s?sid:null,subjectName:s?s.name:oth,emoji:s?s.emoji:'📌',color:s?s.color:OTHER_COLOR,text,day,period,due,remindAt,nextAlert:remindAt};
       if(edit)Object.assign(edit,rec);else state.hw.push({id:uid(),done:false,created:Date.now(),...rec});
       save();close();render();yay();toast(edit?'Saved ✅':`Added! I’ll remind you ${relDay(key(remindAt)).toLowerCase()} at ${fmtTime(remindAt)} ⏰`);
