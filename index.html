@@ -270,8 +270,17 @@ const TYPES=[
  {id:'test',name:'Test',emoji:'📋',say:'study for your',word:'test',exam:true},
  {id:'reading',name:'Reading',emoji:'📖',say:'do your',word:'reading'},
  {id:'worksheet',name:'Worksheet',emoji:'📄',say:'do your',word:'worksheet'},
- {id:'presentation',name:'Presentation',emoji:'🎤',say:'prepare your',word:'presentation'}
+ {id:'presentation',name:'Presentation',emoji:'🎤',say:'prepare your',word:'presentation'},
+ {id:'other',name:'Other',emoji:'📌',say:'do your',word:'task'}
 ];
+const OTHER_COLOR='#FF9F1C';
+const hasArabic=t=>/[\u0600-\u06FF]/.test(t||'');
+function hwLook(h){
+  const s=subj(h.subjectId);
+  if(h.type==='other')return {title:h.otherName||'Task',emoji:s?s.emoji:'📌',color:s?s.color:OTHER_COLOR,subject:s?s.name:''};
+  const f=s||{name:h.subjectName||'Homework',emoji:h.emoji||'📝',color:h.color||'#7B5CFF'};
+  return {title:f.name,emoji:f.emoji,color:f.color,subject:''};
+}
 const typ=id=>TYPES.find(t=>t.id===id)||TYPES[0];
 const DAYS=[{i:0,s:'Sun',n:'Sunday'},{i:1,s:'Mon',n:'Monday'},{i:2,s:'Tue',n:'Tuesday'},{i:3,s:'Wed',n:'Wednesday'},{i:4,s:'Thu',n:'Thursday'}];
 const PALETTE=['#FF5FA8','#7B5CFF','#1FBF9F','#FF9F1C','#2D9CDB','#E84393','#00B894','#A66CFF','#F76E11','#0FB5C9','#D35400','#6C5CE7'];
@@ -546,13 +555,13 @@ function header(){
 
 /* ---------- Views ---------- */
 function hwCard(h){
-  const s=subj(h.subjectId)||{name:h.subjectName||'Homework',emoji:h.emoji||'📝',color:h.color||'#7B5CFF'};
+  const L=hwLook(h);
   const late=!h.done&&h.due<todayK(), isToday=h.due===todayK();
-  return `<article class="hw ${h.done?'isdone':''}" style="--c:${s.color}">
-    <div class="emo">${s.emoji}</div>
+  return `<article class="hw ${h.done?'isdone':''}" style="--c:${L.color}">
+    <div class="emo">${L.emoji}</div>
     <div>
-      <div class="sub" dir="auto">${esc(s.name)}</div>
-      <div class="chips" style="margin:3px 0 1px"><span class="chip type ${typ(h.type).exam?'exam':''}">${typ(h.type).emoji} ${typ(h.type).name}</span></div>
+      <div class="sub" dir="auto">${esc(L.title)}</div>
+      <div class="chips" style="margin:3px 0 1px"><span class="chip type ${typ(h.type).exam?'exam':''}">${typ(h.type).emoji} ${typ(h.type).name}</span>${L.subject?`<span class="chip" dir="auto">${esc(L.subject)}</span>`:''}</div>
       <div class="txt" dir="auto">${esc(h.text)}</div>
       <div class="chips">
         ${h.done?`<span class="chip">Done ${relDay(key(h.doneAt))}</span>`
@@ -736,6 +745,7 @@ function hwSheet(opts={}){
   let period=edit?edit.period:(opts.period??null);
   let sid=edit?edit.subjectId:(period!=null?state.schedule[day][period]:null);
   let type=edit?(edit.type||'homework'):'homework';
+  const otherInit=edit?(edit.otherName||''):'';
   const dues=dueOptions();
   let due=edit?edit.due:dues[1].k;
   let remDay=edit?key(edit.remindAt):defaultRemDay(due);
@@ -744,10 +754,12 @@ function hwSheet(opts={}){
 
   openSheet(`<h3>${edit?'Edit homework ✏️':'New homework 📝'}</h3>
     <div class="lbl">What kind is it?</div><div class="opts" id="typO">${TYPES.map(t=>`<button class="opt" data-t="${t.id}" aria-pressed="${t.id===type}">${t.emoji} ${t.name}</button>`).join('')}</div>
+    <div id="otherBox" ${type==='other'?'':'hidden'}><div class="lbl">📌 What do you need to do? (English or عربي)</div>
+      <input class="field" id="oth" dir="auto" maxlength="80" placeholder="Bring a family photo" value="${esc(otherInit)}"></div>
     <div class="lbl">Which day did you get it?</div><div class="opts" id="dayO">${DAYS.map(d=>`<button class="opt" data-d="${d.i}" aria-pressed="${d.i===day}">${d.s}</button>`).join('')}</div>
     <div class="lbl">Which class?</div><div class="opts" id="perO"></div>
-    <div class="lbl">Subject</div><div class="opts" id="subO"></div>
-    <div class="lbl">What’s the homework? (English or عربي)</div>
+    <div class="lbl" id="subLbl">${type==='other'?'Subject (optional)':'Subject'}</div><div class="opts" id="subO"></div>
+    <div class="lbl" id="txtLbl">${type==='other'?'More details (optional)':'What’s the homework? (English or عربي)'}</div>
     <textarea id="txt" dir="auto" placeholder="Page 24, questions 1 to 5">${esc(edit?edit.text:'')}</textarea>
     <div class="lbl">When do you need it?</div><div class="opts" id="dueO"></div>
     <div class="lbl">When do you want to do it? I’ll remind you 🦄</div><div class="opts" id="remO"></div>
@@ -776,18 +788,24 @@ function hwSheet(opts={}){
     remO.onclick=e=>{const b=e.target.closest('[data-r]');if(!b)return;remDay=b.dataset.r;press(remO,b);remTxt()};
     el.querySelector('#dayO').onclick=e=>{const b=e.target.closest('[data-d]');if(!b)return;day=+b.dataset.d;press(el.querySelector('#dayO'),b);period=null;drawPer()};
     per.onclick=e=>{const b=e.target.closest('[data-p]');if(!b)return;period=+b.dataset.p;press(per,b);const s=state.schedule[day][period];if(s){sid=s;drawSub()}};
-    sub.onclick=e=>{const b=e.target.closest('[data-s]');if(!b)return;sid=b.dataset.s;press(sub,b)};
+    sub.onclick=e=>{const b=e.target.closest('[data-s]');if(!b)return;if(type==='other'&&sid===b.dataset.s){sid=null;b.setAttribute('aria-pressed','false');return}sid=b.dataset.s;press(sub,b)};
     dueO.onclick=e=>{const b=e.target.closest('[data-k]');if(!b)return;due=b.dataset.k;remDay=defaultRemDay(due);drawDue();drawRem()};
     el.querySelector('#tm').oninput=remTxt;
-    el.querySelector('#typO').onclick=e=>{const b=e.target.closest('[data-t]');if(!b)return;type=b.dataset.t;press(el.querySelector('#typO'),b)};
+    el.querySelector('#typO').onclick=e=>{const b=e.target.closest('[data-t]');if(!b)return;type=b.dataset.t;press(el.querySelector('#typO'),b);
+      const o=type==='other';el.querySelector('#otherBox').hidden=!o;
+      el.querySelector('#subLbl').textContent=o?'Subject (optional)':'Subject';
+      el.querySelector('#txtLbl').textContent=o?'More details (optional)':'What’s the homework? (English or عربي)';
+      if(o)setTimeout(()=>el.querySelector('#oth').focus(),50)};
     el.querySelector('#cancel').onclick=close;
     if(edit)el.querySelector('#del').onclick=()=>{state.hw=state.hw.filter(h=>h.id!==edit.id);save();close();render();toast('Homework deleted')};
     el.querySelector('#ok').onclick=()=>{
       const text=el.querySelector('#txt').value.trim();
-      if(!sid){toast('Pick a subject first 🙂');return}
-      if(!text){toast('Write what the homework is 🙂');el.querySelector('#txt').focus();return}
-      const s=subj(sid),remindAt=remindTs(remDay,el.querySelector('#tm').value||'16:00');
-      const rec={type,subjectId:sid,subjectName:s.name,emoji:s.emoji,color:s.color,text,day,period,due,remindAt,nextAlert:remindAt};
+      const isOther=type==='other',oth=el.querySelector('#oth').value.trim();
+      if(isOther&&!oth){toast('Write what you need to do 🙂');el.querySelector('#oth').focus();return}
+      if(!isOther&&!sid){toast('Pick a subject first 🙂');return}
+      if(!isOther&&!text){toast('Write what the homework is 🙂');el.querySelector('#txt').focus();return}
+      const s=sid?subj(sid):null,remindAt=remindTs(remDay,el.querySelector('#tm').value||'16:00');
+      const rec={type,otherName:isOther?oth:'',subjectId:s?sid:null,subjectName:s?s.name:oth,emoji:s?s.emoji:'📌',color:s?s.color:OTHER_COLOR,text,day,period,due,remindAt,nextAlert:remindAt};
       if(edit)Object.assign(edit,rec);else state.hw.push({id:uid(),done:false,created:Date.now(),...rec});
       save();close();render();yay();toast(edit?'Saved ✅':`Added! I’ll remind you ${relDay(key(remindAt)).toLowerCase()} at ${fmtTime(remindAt)} ⏰`);
     };
@@ -871,11 +889,11 @@ function checkAlarms(){
 }
 function showAlarm(h){
   alerting=h.id;h.nextAlert=Date.now()+10*6e4;save();
-  const s=subj(h.subjectId)||{name:h.subjectName,emoji:h.emoji};
+  const L=hwLook(h),T=typ(h.type);
   const a=document.createElement('div');a.className='alarm';a.setAttribute('role','alertdialog');
   a.innerHTML=`<div class="box"><span class="bigUni">${UNI}</span>
-    <h3>${esc(state.name)}! It’s ${typ(h.type).exam?'study':'homework'} time! ⏰</h3>
-    <p><b dir="auto">${s.emoji} ${esc(s.name)} ${typ(h.type).name}</b></p>
+    <h3>${esc(state.name)}! It’s ${T.exam?'study':h.type==='other'?'task':'homework'} time! ⏰</h3>
+    <p><b dir="auto">${L.emoji} ${h.type==='other'?esc(L.title)+(L.subject?' · '+esc(L.subject):''):esc(L.title)+' '+T.name}</b></p>
     <p dir="auto">${esc(h.text)}</p>
     <p style="color:var(--soft);font-size:17px">Needed ${relDay(h.due).toLowerCase()}</p>
     <div class="btns">
@@ -885,7 +903,9 @@ function showAlarm(h){
     </div></div>`;
   document.body.appendChild(a);
   playTune(state.sound,3);
-  setTimeout(()=>speak(`${state.name}! It's time to ${typ(h.type).say} ${s.name} ${typ(h.type).word}!`),1800);
+  setTimeout(()=>speak(h.type==='other'
+    ?(hasArabic(L.title)?`${state.name}! It's time for your task!`:`${state.name}! Time for your task: ${L.title}!`)
+    :`${state.name}! It's time to ${T.say} ${hasArabic(L.title)?'':L.title+' '}${T.word}!`),1800);
   const close=()=>{a.remove();alerting=null;speechSynthesis&&speechSynthesis.cancel()};
   a.querySelector('#aDone').onclick=()=>{close();toggleDone(h.id)};
   a.querySelector('#aStart').onclick=()=>{h.nextAlert=Date.now()+30*6e4;save();close();render();toast('You got this! I’ll check again in 30 minutes 💪')};
