@@ -202,6 +202,8 @@ textarea{min-height:96px;resize:vertical;unicode-bidi:plaintext}
 .pr .btn{flex:0 0 auto;padding:8px 12px;font-size:15px}
 @keyframes hop{0%,100%{transform:translateY(0)}40%{transform:translateY(-14px) rotate(-6deg)}}
 @media (max-width:640px){.top{grid-template-columns:auto 1fr}.top>div:last-child{grid-column:1/-1}.uni{width:84px;height:84px}}
+.codebox{font-size:40px;font-weight:800;letter-spacing:3px;text-align:center;background:var(--bg);border:3px dashed var(--grape);border-radius:24px;padding:14px;margin:10px 0;direction:ltr;user-select:all}
+.syncok{color:var(--mint);font-weight:800}
 #confetti{position:fixed;inset:0;pointer-events:none;z-index:70}
 
 @keyframes fade{from{opacity:0}}
@@ -230,6 +232,7 @@ textarea{min-height:96px;resize:vertical;unicode-bidi:plaintext}
         <div class="jarinfo"><b id="starCount">0</b><span>stars earned</span><br><span class="lvl" id="lvl">Seedling</span></div>
       </div>
       <div class="tools">
+        <button class="pill" id="syncPill" hidden title="Family sync">☁️</button>
         <button class="pill" id="wakeBtn" title="Keep the screen on so alarms can ring">🌙 Keep awake</button>
         <button class="pill" id="setBtn" aria-label="Settings">⚙️</button>
       </div>
@@ -315,10 +318,11 @@ function migrate(raw){
 }
 function loadLocal(){try{const r=localStorage.getItem('amolah-hw');if(r){const d=JSON.parse(r);state=Object.assign(freshState(),d);migrate(d)}}catch(e){}migrate()}
 function save(){
+  stamp();
   state.rev=(state.rev||0)+1;
   try{localStorage.setItem('amolah-hw',JSON.stringify(state))}catch(e){}
   clearTimeout(saveTimer);
-  saveTimer=setTimeout(()=>{if(dbRef)dbRef.set(JSON.parse(JSON.stringify(state))).catch(()=>{})},600);
+  saveTimer=setTimeout(()=>{if(dbRef)dbRef.set(JSON.parse(JSON.stringify(state))).catch(()=>{});else if(famCode)syncNow()},700);
 }
 function prune(){
   const cut=Date.now()-60*864e5;
@@ -340,6 +344,130 @@ async function connectDb(){
       const d=s.data();if(d&&(d.rev||0)>(state.rev||0)){state=Object.assign(freshState(),d);migrate(d);render()}
     },()=>{});
   }catch(e){}
+}
+
+/* ---------- Family cloud sync (Supabase) ---------- */
+const SB_URL='https://tpwzflhnsncwnhddnfqz.supabase.co';
+const SB_KEY='sb_publishable_3TAz5OaFcP7B1178f2LDvQ_ILGgpHir';
+let famCode=null,syncing=false,syncAgain=false,lastSync=0,syncErr='',lastSnap={hw:{},rewards:{},top:''};
+const cloudOK=()=>!(window.claude&&window.claude.use);
+const LIST_KEYS=['hw','rewards','del','t','rev'];
+function topSig(o){const c={};Object.keys(o).sort().forEach(k=>{if(!LIST_KEYS.includes(k))c[k]=o[k]});return JSON.stringify(c)}
+const itemSig=x=>{const c={...x};delete c.u;return JSON.stringify(c)};
+function snap(){
+  lastSnap={hw:{},rewards:{},top:topSig(state)};
+  (state.hw||[]).forEach(x=>lastSnap.hw[x.id]=itemSig(x));
+  (state.rewards||[]).forEach(x=>lastSnap.rewards[x.id]=itemSig(x));
+}
+function stamp(){
+  const now=Date.now();state.del=state.del||{};
+  ['hw','rewards'].forEach(k=>{
+    const cur=new Set();
+    (state[k]||[]).forEach(x=>{cur.add(x.id);if(lastSnap[k][x.id]!==itemSig(x))x.u=now});
+    Object.keys(lastSnap[k]).forEach(id=>{if(!cur.has(id))state.del[id]=now});
+  });
+  if(topSig(state)!==lastSnap.top)state.t=now;
+  snap();
+}
+function mergeState(a,b,preferB){
+  const del={...(a.del||{})};Object.entries(b.del||{}).forEach(([k,v])=>{if(!del[k]||v>del[k])del[k]=v});
+  const cut=Date.now()-120*864e5;Object.keys(del).forEach(k=>{if(del[k]<cut)delete del[k]});
+  const list=(x=[],y=[])=>{const m=new Map();[...x,...y].forEach(i=>{const o=m.get(i.id);if(!o||(i.u||0)>(o.u||0))m.set(i.id,i)});
+    return [...m.values()].filter(i=>!(del[i.id]&&del[i.id]>=(i.u||0)))};
+  const top=preferB||(b.t||0)>(a.t||0)?b:a;
+  return Object.assign(freshState(),JSON.parse(JSON.stringify(top)),{hw:list(a.hw,b.hw),rewards:list(a.rewards,b.rewards),del});
+}
+function canon(v){if(Array.isArray(v))return '['+v.map(canon).join(',')+']';if(v&&typeof v==='object')return '{'+Object.keys(v).sort().filter(k=>v[k]!==undefined).map(k=>JSON.stringify(k)+':'+canon(v[k])).join(',')+'}';return JSON.stringify(v)}
+async function rpc(fn,args){
+  const r=await fetch(`${SB_URL}/rest/v1/rpc/${fn}`,{method:'POST',headers:{apikey:SB_KEY,'Content-Type':'application/json'},body:JSON.stringify(args)});
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  const t=await r.text();return t?JSON.parse(t):null;
+}
+function syncPill(){
+  const b=$('#syncPill');if(!b)return;
+  b.hidden=!famCode;
+  b.textContent=syncErr?'☁️ ⚠️':syncing?'☁️ …':'☁️ ✓';
+  b.title=syncErr?('Sync problem: '+syncErr):'Synced '+(lastSync?fmtTime(lastSync):'');
+}
+function adopt(next){
+  state=next;migrate(null);
+  try{localStorage.setItem('amolah-hw',JSON.stringify(state))}catch(e){}
+  snap();
+}
+async function syncNow(preferRemote){
+  if(!famCode||!cloudOK())return;
+  if(syncing){syncAgain=true;return}
+  syncing=true;syncErr='';syncPill();
+  try{
+    const remote=await rpc('get_family',{p_code:famCode});
+    if(!remote){syncErr='Family code not found';}
+    else{
+      const merged=mergeState(state,remote,preferRemote);
+      const same=canon(merged)===canon(Object.assign(freshState(),remote));
+      const localChanged=canon(merged)!==canon(state);
+      adopt(merged);
+      if(!same)await rpc('save_family',{p_code:famCode,p_data:state});
+      lastSync=Date.now();
+      if(localChanged&&!document.querySelector('.scrim'))render();
+    }
+  }catch(e){syncErr=navigator.onLine===false?'No internet':'Could not reach the cloud'}
+  syncing=false;syncPill();
+  if(syncAgain){syncAgain=false;syncNow()}
+}
+function initCloud(){
+  if(!cloudOK())return;
+  try{famCode=localStorage.getItem('amolah-family')}catch(e){}
+  syncPill();
+  if(famCode)syncNow();
+  setInterval(()=>{if(!document.hidden)syncNow()},20000);
+}
+function genCode(){
+  const A='ABCDEFGHJKMNPQRSTUVWXYZ23456789';const r=crypto.getRandomValues(new Uint32Array(8));
+  let c='';r.forEach((v,i)=>{c+=A[v%A.length];if(i===3)c+='-'});return 'LUNA-'+c;
+}
+function showCode(code,title){
+  openSheet(`<h3>${title}</h3>
+    <p class="note" style="font-size:17px">Write this code down. Enter it once on every phone or iPad that should see ${esc(state.name)}’s homework.</p>
+    <div class="codebox">${code}</div>
+    <div class="btns"><button class="btn main" id="ok">Got it</button></div>`,(el,close)=>{el.querySelector('#ok').onclick=close});
+}
+function syncSheet(){
+  openSheet(`<h3>Family sync ☁️</h3>
+    ${famCode?`<p style="font-size:18px"><span class="syncok">Connected ✓</span> This device shares homework with the family.</p>
+      <div class="codebox">${famCode}</div>
+      <p class="note">${syncErr?'⚠️ '+esc(syncErr):lastSync?'Last synced at '+fmtTime(lastSync):'Syncing…'}</p>
+      <div class="btns"><button class="btn red" id="leave">Disconnect this device</button><button class="btn main" id="now">Sync now</button></div>`
+    :`<p class="note" style="font-size:17px">Share ${esc(state.name)}’s schedule, homework, stars and rewards between the iPad and your phones. Changes appear on every device within seconds.</p>
+      <div class="lbl">First device (usually the iPad)</div>
+      <button class="btn main" id="create" style="width:100%">Create a family code</button>
+      <div class="lbl">Other devices</div>
+      <input class="field" id="jc" placeholder="LUNA-XXXX-XXXX" autocapitalize="characters" autocomplete="off" style="direction:ltr;text-transform:uppercase">
+      <button class="btn pink" id="join" style="width:100%;margin-top:10px">Join with this code</button>`}
+    <div class="btns"><button class="btn" id="cancel">Close</button></div>`,
+  (el,close)=>{
+    el.querySelector('#cancel').onclick=close;
+    if(famCode){
+      el.querySelector('#now').onclick=async()=>{await syncNow();close();toast(syncErr?'⚠️ '+syncErr:'Synced ✓')};
+      el.querySelector('#leave').onclick=()=>{if(!confirm('Stop syncing on this device? The homework stays here, but new changes won’t be shared.'))return;
+        famCode=null;try{localStorage.removeItem('amolah-family')}catch(e){}syncPill();close();toast('This device is no longer synced')};
+    }else{
+      el.querySelector('#create').onclick=async()=>{
+        const code=genCode();
+        try{stamp();const ok=await rpc('create_family',{p_code:code,p_data:state});if(!ok)throw 0;
+          famCode=code;localStorage.setItem('amolah-family',code);lastSync=Date.now();syncPill();close();showCode(code,'Your family code 🔑');
+        }catch(e){toast('Could not create the code. Check the internet and try again.')}
+      };
+      el.querySelector('#join').onclick=async()=>{
+        const code=el.querySelector('#jc').value.trim().toUpperCase();
+        if(code.length<8){toast('Type the full family code');return}
+        try{const remote=await rpc('get_family',{p_code:code});
+          if(!remote){toast('That code was not found');return}
+          famCode=code;localStorage.setItem('amolah-family',code);close();
+          await syncNow(true);render();toast('Connected! Homework is now shared ☁️');
+        }catch(e){toast('Could not connect. Check the internet and try again.')}
+      };
+    }
+  });
 }
 
 /* ---------- Sound & voice ---------- */
@@ -698,12 +826,14 @@ function settingsSheet(){
     <div class="lbl">Classes per day</div><div class="opts" id="pO">${[5,6,7,8,9].map(n=>`<button class="opt" data-n="${n}" aria-pressed="${n===state.periods}">${n}</button>`).join('')}</div>
     <div class="lbl">Reminder sound</div><div class="opts" id="sO">${Object.entries(TUNES).map(([k,t])=>`<button class="opt" data-t="${k}" aria-pressed="${k===state.sound}">${t.name}</button>`).join('')}</div>
     <div class="lbl">Talking reminder</div><div class="opts" id="vO"><button class="opt" data-v="1" aria-pressed="${state.voice}">🗣️ On</button><button class="opt" data-v="0" aria-pressed="${!state.voice}">🔇 Off</button></div>
+    ${cloudOK()?`<div class="lbl">Parents</div><button class="btn" id="sync" style="width:100%">☁️ Family sync ${famCode?'(connected ✓)':''} 🔒</button>`:''}
     <div class="btns"><button class="btn pink" id="test">Test the alarm 🔔</button><button class="btn main" id="ok">Done</button></div>
     <p class="note">For alarms to ring, keep this page open on the iPad with the volume up and the side switch off silent. Tap “Keep awake” so the screen doesn’t turn off.</p>`,
   (el,close)=>{
     el.querySelector('#pO').onclick=e=>{const b=e.target.closest('[data-n]');if(!b)return;state.periods=+b.dataset.n;press(el.querySelector('#pO'),b);DAYS.forEach(d=>{while(state.schedule[d.i].length<state.periods)state.schedule[d.i].push(null)});save()};
     el.querySelector('#sO').onclick=e=>{const b=e.target.closest('[data-t]');if(!b)return;state.sound=b.dataset.t;press(el.querySelector('#sO'),b);playTune(state.sound);save()};
     el.querySelector('#vO').onclick=e=>{const b=e.target.closest('[data-v]');if(!b)return;state.voice=b.dataset.v==='1';press(el.querySelector('#vO'),b);save()};
+    if(cloudOK())el.querySelector('#sync').onclick=()=>{close();pinGate(syncSheet)};
     el.querySelector('#test').onclick=()=>{playTune(state.sound,2);speak(`${state.name}! It's homework time!`)};
     el.querySelector('#ok').onclick=()=>{const n=el.querySelector('#nm').value.trim();if(n)state.name=n;const pn=el.querySelector('#pn').value.trim();if(pn)state.pet=pn;save();close();render()};
   });
@@ -770,6 +900,7 @@ document.addEventListener('click',e=>{
   if(t.id==='setBtn')return settingsSheet();
   if(t.id==='wakeBtn')return toggleWake();
   if(t.id==='parentBtn')return pinGate(parentPanel);
+  if(t.id==='syncPill'){syncNow().then(()=>toast(syncErr?'⚠️ '+syncErr:'Synced ✓'));return}
   if(t.id==='uniHead'){hop();const m=CHEERS[Math.random()*CHEERS.length|0];$('#sub').textContent=m;playTune('bubbles');speak(m.replace(/[^\w\s!’']/g,''));setTimeout(header,5000);return}
   if(t.dataset.done)return toggleDone(t.dataset.done);
   if(t.dataset.edit){const h=state.hw.find(x=>x.id===t.dataset.edit);if(h)hwSheet({edit:h});return}
@@ -779,10 +910,10 @@ document.addEventListener('click',e=>{
 });
 document.addEventListener('pointerdown',unlockAudio,{passive:true});
 $('#startBtn').onclick=()=>{unlockAudio();playTune('chime');$('#splash').remove();speak(`Hi ${state.name}! Let's check your homework.`);setTimeout(checkAlarms,1500)};
-document.addEventListener('visibilitychange',()=>{if(!document.hidden){render();checkAlarms();if($('#wakeBtn').classList.contains('on')&&!wakeLock)toggleWake()}});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){render();checkAlarms();syncNow();if($('#wakeBtn').classList.contains('on')&&!wakeLock)toggleWake()}});
 
 /* ---------- Start ---------- */
-loadLocal();prune();render();connectDb();
+loadLocal();prune();snap();render();connectDb();initCloud();
 setInterval(checkAlarms,10000);
 setInterval(header,60000);
 </script>
