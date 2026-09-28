@@ -576,7 +576,7 @@ function hwCard(h){
       <div class="chips">
         ${h.done?`<span class="chip">Done ${relDay(key(h.doneAt))}</span>`
           :`<span class="chip ${late?'late':isToday?'today':''}">${late?'Late! ':''}Needed ${relDay(h.due)}</span>
-            <span class="chip">⏰ ${relDay(key(h.remindAt))} ${fmtTime(h.remindAt)}</span>`}
+            <span class="chip">${h.muted?'🔕 Reminder off':`⏰ ${relDay(key(h.remindAt))} ${fmtTime(h.remindAt)}`}</span>`}
       </div>
       <div class="cardbtns"><button class="editbtn" data-edit="${h.id}">✏️ Edit</button><button class="editbtn del" data-del="${h.id}">🗑️ Delete</button></div>
     </div>
@@ -837,7 +837,7 @@ function hwSheet(opts={}){
       if(!isOther&&!sid){toast('Pick a subject first 🙂');return}
       if(!isOther&&!text){toast('Write what the homework is 🙂');el.querySelector('#txt').focus();return}
       const s=sid?subj(sid):null,remindAt=remindTs(remDay,el.querySelector('#tm').value||'16:00');state.lastTime=el.querySelector('#tm').value||time;
-      const rec={type,otherName:isOther?oth:'',subjectId:s?sid:null,subjectName:s?s.name:oth,emoji:s?s.emoji:'📌',color:s?s.color:OTHER_COLOR,text,day,period,due,remindAt,nextAlert:remindAt};
+      const rec={type,otherName:isOther?oth:'',subjectId:s?sid:null,subjectName:s?s.name:oth,emoji:s?s.emoji:'📌',color:s?s.color:OTHER_COLOR,text,day,period,due,remindAt,nextAlert:remindAt,muted:false};
       if(edit)Object.assign(edit,rec);else state.hw.push({id:uid(),done:false,created:Date.now(),...rec});
       save();close();render();yay();toast(edit?'Saved ✅':`Added! I’ll remind you ${relDay(key(remindAt)).toLowerCase()} at ${fmtTime(remindAt)} ⏰`);
     };
@@ -1008,6 +1008,7 @@ function showAlarm(h){
       <button class="btn main" id="aStart">I’m starting now 💪</button>
       <button class="btn" id="aSnooze">Remind me in 10 minutes</button>
       <button class="btn" id="aEdit">✏️ Change time or details</button>
+      <button class="btn" id="aStop">🔕 Stop this reminder</button>
     </div></div>`;
   document.body.appendChild(a);
   playTune(state.sound,3);
@@ -1018,6 +1019,7 @@ function showAlarm(h){
   a.querySelector('#aDone').onclick=()=>{close();toggleDone(h.id)};
   a.querySelector('#aStart').onclick=()=>{h.nextAlert=Date.now()+30*6e4;save();close();render();toast('You got this! I’ll check again in 30 minutes 💪')};
   a.querySelector('#aEdit').onclick=()=>{close();hwSheet({edit:h})};
+  a.querySelector('#aStop').onclick=()=>{h.nextAlert=0;h.muted=true;save();close();render();toast('Okay! No more reminders for this one 🔕')};
   a.querySelector('#aSnooze').onclick=()=>{h.nextAlert=Date.now()+10*6e4;save();close();render();toast('Okay! Back in 10 minutes ⏰')};
 }
 
